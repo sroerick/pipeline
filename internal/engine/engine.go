@@ -18,6 +18,7 @@ import (
 	"pipe/internal/pipeline"
 	"pipe/internal/runner"
 	"pipe/internal/store"
+	"pipe/internal/workspace"
 )
 
 type Engine struct {
@@ -27,10 +28,11 @@ type Engine struct {
 }
 
 type RunResult struct {
-	RunID    string
-	Pipeline string
-	Status   string
-	Manifest manifest.Run
+	RunID     string
+	Pipeline  string
+	Status    string
+	Published []string
+	Manifest  manifest.Run
 }
 
 type resolvedInput struct {
@@ -47,7 +49,7 @@ func New(project *config.Project, database *db.DB) *Engine {
 }
 
 func (e *Engine) RunPipeline(ctx context.Context, pipelineName string) (*RunResult, error) {
-	spec, err := pipeline.Load(config.SpecPath(e.project.Root))
+	spec, err := pipeline.LoadFrom(config.SpecPath(e.project.Root), e.project.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -107,11 +109,19 @@ func (e *Engine) RunPipeline(ctx context.Context, pipelineName string) (*RunResu
 	if err := e.writeManifest(runID, manifestRun); err != nil {
 		return nil, err
 	}
+	var published []string
+	if runErr == nil {
+		published, err = e.publishDeclaredOutputs(*def, artifactsByOutput)
+		if err != nil {
+			return nil, err
+		}
+	}
 	result := &RunResult{
-		RunID:    runID,
-		Pipeline: def.Name,
-		Status:   manifestRun.Status,
-		Manifest: manifestRun,
+		RunID:     runID,
+		Pipeline:  def.Name,
+		Status:    manifestRun.Status,
+		Published: published,
+		Manifest:  manifestRun,
 	}
 	if runErr != nil {
 		return result, runErr
@@ -319,6 +329,34 @@ func (e *Engine) writeManifest(runID string, m manifest.Run) error {
 		return err
 	}
 	return fsx.AtomicWriteFile(config.ManifestPath(e.project.Root, runID), data, 0o644)
+}
+
+func (e *Engine) publishDeclaredOutputs(def pipeline.Pipeline, artifacts map[string]db.ArtifactRecord) ([]string, error) {
+	var published []string
+	for _, step := range def.Steps {
+		for _, out := range step.Outputs {
+			if out.Publish == "" {
+				continue
+			}
+			artifact, ok := artifacts[artifactKey(step.Name, out.Name)]
+			if !ok {
+				return nil, fmt.Errorf("missing artifact for publish target %s:%s/%s", def.Name, step.Name, out.Name)
+			}
+			source, err := e.store.Resolve(artifact.ObjectRef)
+			if err != nil {
+				return nil, err
+			}
+			target, err := fsx.SafeJoin(e.project.Root, out.Publish)
+			if err != nil {
+				return nil, err
+			}
+			if err := workspace.Materialize(source, target, workspace.Mode(e.project.Config.PublishMode)); err != nil {
+				return nil, err
+			}
+			published = append(published, target)
+		}
+	}
+	return published, nil
 }
 
 func inputsToManifest(values []resolvedInput) []manifest.Input {

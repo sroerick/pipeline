@@ -49,11 +49,11 @@ func Run(ctx context.Context, args []string) error {
 			return fmt.Errorf("usage: pipe mount <ref> <dir>")
 		}
 		return cmdMount(args[1], args[2])
-	case "expose":
+	case "publish":
 		if len(args) != 3 {
-			return fmt.Errorf("usage: pipe expose <ref> <path>")
+			return fmt.Errorf("usage: pipe publish <ref> <path>")
 		}
-		return cmdExpose(args[1], args[2])
+		return cmdPublish(args[1], args[2])
 	case "log":
 		target := ""
 		if len(args) > 1 {
@@ -101,6 +101,9 @@ func cmdRun(ctx context.Context, pipelineName string) error {
 	fmt.Println(ui.KV("run", result.RunID))
 	fmt.Println(ui.KV("pipeline", result.Pipeline))
 	fmt.Println(ui.KV("status", result.Status))
+	for _, path := range result.Published {
+		fmt.Println(ui.KV("published", path))
+	}
 	if runErr != nil {
 		return runErr
 	}
@@ -114,11 +117,19 @@ func cmdStages(target string) error {
 	}
 	defer database.Close()
 	fmt.Println(ui.Heading("Stages"))
-	if strings.HasPrefix(target, "run:") {
-		runID := strings.TrimPrefix(target, "run:")
-		return printRunStages(database, runID)
+	if target == "current" || target == "latest" {
+		target = "alias:current"
 	}
-	spec, err := pipeline.Load(config.SpecPath(project.Root))
+	if target != "" {
+		if ref, err := resolveAlias(database, target); err == nil && ref.Kind == pipeline.RefRun && ref.RunID != "" {
+			return printRunStages(database, ref.RunID)
+		}
+		if strings.HasPrefix(target, "run:") {
+			runID := strings.TrimPrefix(target, "run:")
+			return printRunStages(database, runID)
+		}
+	}
+	spec, err := pipeline.LoadFrom(config.SpecPath(project.Root), project.Root)
 	if err != nil {
 		return err
 	}
@@ -130,6 +141,9 @@ func cmdStages(target string) error {
 		fmt.Printf("%s (%s)\n", step.Name, step.Kind)
 		for _, out := range step.Outputs {
 			fmt.Printf("  - %s -> %s [%s]\n", out.Name, out.Path, out.Type)
+			if out.Publish != "" {
+				fmt.Printf("      publish -> %s\n", out.Publish)
+			}
 		}
 	}
 	return nil
@@ -141,7 +155,7 @@ func cmdStatus() error {
 		return err
 	}
 	defer database.Close()
-	spec, specErr := pipeline.Load(config.SpecPath(project.Root))
+	spec, specErr := pipeline.LoadFrom(config.SpecPath(project.Root), project.Root)
 	runs, _ := database.ListRuns(5, "")
 	aliases, _ := database.ListAliases()
 	failedSteps, _ := database.ListFailedSteps(5)
@@ -154,7 +168,7 @@ func cmdStatus() error {
 		}
 		fmt.Println(ui.KV("pipelines", strings.Join(names, ", ")))
 	} else {
-		fmt.Println(ui.KV("pipelines", "missing pipe.yaml"))
+		fmt.Println(ui.KV("pipelines", "missing pipeline spec"))
 	}
 	if len(runs) == 0 {
 		fmt.Println(ui.KV("latest runs", "none"))
@@ -257,7 +271,7 @@ func cmdMount(rawRef, dir string) error {
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return err
 	}
-	mode := workspace.Mode(project.Config.ProjectionMode)
+	mode := workspace.Mode(project.Config.MountMode)
 	if resolved.Artifact != nil {
 		target := filepath.Join(targetDir, resolved.Artifact.OutputName)
 		if err := workspace.Materialize(resolved.StoredPath, target, mode); err != nil {
@@ -285,7 +299,7 @@ func cmdMount(rawRef, dir string) error {
 	return nil
 }
 
-func cmdExpose(rawRef, path string) error {
+func cmdPublish(rawRef, path string) error {
 	project, database, err := openProject()
 	if err != nil {
 		return err
@@ -300,13 +314,13 @@ func cmdExpose(rawRef, path string) error {
 		return err
 	}
 	if resolved.Artifact == nil {
-		return fmt.Errorf("expose requires an artifact ref")
+		return fmt.Errorf("publish requires an artifact ref")
 	}
 	target, err := filepath.Abs(path)
 	if err != nil {
 		return err
 	}
-	if err := workspace.Materialize(resolved.StoredPath, target, workspace.Mode(project.Config.ProjectionMode)); err != nil {
+	if err := workspace.Materialize(resolved.StoredPath, target, workspace.Mode(project.Config.PublishMode)); err != nil {
 		return err
 	}
 	fmt.Println(target)
@@ -512,5 +526,5 @@ func printArtifactProvenance(database *db.DB, artifact *db.ArtifactRecord) error
 }
 
 func usage() error {
-	return fmt.Errorf("usage: pipe <init|run|stages|status|show|mount|expose|log|provenance>")
+	return fmt.Errorf("usage: pipe <init|run|stages|status|show|mount|publish|log|provenance>")
 }

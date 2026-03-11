@@ -40,6 +40,7 @@ pipelines:
           - name: result
             path: result.txt
             type: file
+            publish: out/result.txt
 `)
 
 	previousWD, err := os.Getwd()
@@ -57,6 +58,8 @@ pipelines:
 	for _, args := range [][]string{
 		{"init"},
 		{"run", "demo"},
+		{"stages", "current"},
+		{"stages", "alias:current"},
 		{"show", "demo:upper/result"},
 		{"show", "alias:current"},
 		{"provenance", "demo:upper/result"},
@@ -66,16 +69,35 @@ pipelines:
 		}
 	}
 
-	exposedPath := filepath.Join(projectDir, "build", "result.txt")
-	if err := Run(ctx, []string{"expose", "demo:upper/result", exposedPath}); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(exposedPath)
+	autoPublishedPath := filepath.Join(projectDir, "out", "result.txt")
+	data, err := os.ReadFile(autoPublishedPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, want := string(data), "HELLO PIPELINE\n"; got != want {
-		t.Fatalf("exposed content = %q, want %q", got, want)
+		t.Fatalf("auto-published content = %q, want %q", got, want)
+	}
+	if info, err := os.Lstat(autoPublishedPath); err != nil {
+		t.Fatal(err)
+	} else if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("auto-published file should be copied by default, not symlinked")
+	}
+
+	publishedPath := filepath.Join(projectDir, "build", "result.txt")
+	if err := Run(ctx, []string{"publish", "demo:upper/result", publishedPath}); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(publishedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(data), "HELLO PIPELINE\n"; got != want {
+		t.Fatalf("published content = %q, want %q", got, want)
+	}
+	if info, err := os.Lstat(publishedPath); err != nil {
+		t.Fatal(err)
+	} else if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("published file should be copied by default, not symlinked")
 	}
 
 	database, err := db.Open(config.DBPath(projectDir))

@@ -16,7 +16,7 @@ The core value is:
 - keep the working tree clean
 - store intermediate outputs in hidden managed storage
 - allow users to inspect any stage later
-- expose or mount specific outputs on demand
+- publish or mount specific outputs on demand
 - record provenance for how an output was produced
 
 ## 2. Non-goals for v1
@@ -58,7 +58,7 @@ A single execution of a pipeline.
 ### Projection
 A user-visible materialization of one or more stored artifacts, created by:
 - `mount`
-- `expose`
+- `publish`
 
 ### Provenance
 The recorded lineage connecting inputs, steps, outputs, and runs.
@@ -94,7 +94,7 @@ pipe stages [pipeline-or-run]
 pipe status
 pipe show <ref>
 pipe mount <ref> <dir>
-pipe expose <ref> <path>
+pipe publish <ref> <path>
 pipe log [pipeline-or-run]
 pipe provenance <ref>
 ```
@@ -152,13 +152,15 @@ Creates a projection directory containing the artifacts associated with the ref.
 
 Use symlink by default on platforms that support it. Support fallback to copy mode via config.
 
-### `pipe expose <ref> <path>`
+### `pipe publish <ref> <path>`
 Materializes a single artifact at a stable user-visible path.
 
 Example:
 ```bash
-pipe expose thesis:latex2/pdf ./build/thesis.pdf
+pipe publish thesis:latex2/pdf ./build/thesis.pdf
 ```
+
+`publish` requires an artifact ref, not a run ref or a bare stage ref.
 
 ### `pipe log [pipeline-or-run]`
 Shows recent runs and basic execution details.
@@ -291,9 +293,14 @@ Each output declaration must include:
 - `path`
 - `type`
 
+It may also include:
+- `publish`: project-relative path to materialize after a successful run
+
 For v1, support:
 - `file`
 - `dir`
+
+If `publish` is present, it must stay within the project root.
 
 ### Environment
 Each step may specify:
@@ -323,13 +330,15 @@ For each run:
 10. write artifact records
 11. write stage result metadata
 12. write run manifest
-13. return summary
+13. publish any declared outputs
+14. return summary
 
 ### Failure behavior
 Default behavior:
 - stop pipeline on first failed step
 - mark run as failed
 - preserve metadata and captured logs for completed and failed steps
+- do not publish declared outputs for failed runs
 
 ## 10. Storage layout
 
@@ -357,7 +366,7 @@ All managed data is project-local under `.pipe/`.
 - actual stored artifacts should be content-addressed under `.pipe/objects/`
 - run manifests should be stored under `.pipe/runs/<run-id>/manifest.json`
 - SQLite is the main metadata index
-- the working project tree should remain untouched unless the user explicitly uses `mount` or `expose`
+- the working project tree should remain untouched unless the user explicitly uses `mount` or `publish`, or a successful run materializes declared `publish` targets
 
 ## 11. Artifact storage
 
@@ -513,7 +522,7 @@ Content-addressed object storage and artifact resolution.
 Runtime manifest types.
 
 #### `workspace`
-Mounting and exposing artifacts into user-visible paths.
+Mounting and publishing artifacts into user-visible paths.
 
 #### `cache`
 Reserved for future cache key logic. Keep minimal in v1.
@@ -546,11 +555,11 @@ Secondary target:
 - Windows-compatible where practical
 
 ### Projection modes
-`mount` and `expose` should support:
+`mount` and `publish` should support:
 - symlink
 - copy
 
-Symlink may be default where supported. Copy fallback must exist.
+`mount` may default to symlink where supported. `publish` may default to copy. Copy fallback must exist.
 
 ### Path handling
 Use `filepath` and avoid hardcoded slash behavior.
@@ -611,9 +620,10 @@ type InputRef struct {
 }
 
 type OutputDecl struct {
-    Name string
-    Path string
-    Type string
+    Name    string
+    Path    string
+    Type    string
+    Publish string
 }
 
 type RunRecord struct {
@@ -648,7 +658,7 @@ Priority order:
 6. `stages`
 7. `show`
 8. `mount`
-9. `expose`
+9. `publish`
 10. `log`
 11. `provenance`
 
@@ -665,7 +675,7 @@ A user can define a pipeline with multiple shell steps, run it, and inspect inte
 A user can define parse/typecheck/codegen stages and inspect each stage’s declared outputs by ref.
 
 ### Case 3: Projection
-A user can mount or expose a chosen artifact into a visible path.
+A user can mount or publish a chosen artifact into a visible path.
 
 ### Case 4: Provenance
 A user can ask how an output was produced and see run/step lineage.
@@ -683,8 +693,7 @@ Build `pipe` as:
 - content-addressed artifact storage
 - project-local `.pipe/` directory
 - human-readable refs
-- mount/expose projections
+- mount/publish projections
 - provenance-aware runs
 
 The tool is not source control. It is a **pipeline artifact and provenance manager**.
-

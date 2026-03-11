@@ -16,12 +16,17 @@ const (
 	DirName           = ".pipe"
 	ConfigRelative    = ".pipe/config.yaml"
 	DefaultSpecName   = "pipe.yaml"
-	DefaultProjection = "symlink"
+	HiddenSpecName    = ".pipe/pipe.yaml"
+	DefaultMountMode  = "symlink"
+	DefaultExposeMode = "copy"
 )
 
 type File struct {
 	Version        int    `yaml:"version"`
 	ProjectionMode string `yaml:"projection_mode"`
+	MountMode      string `yaml:"mount_mode"`
+	PublishMode    string `yaml:"publish_mode"`
+	ExposeMode     string `yaml:"expose_mode"`
 }
 
 type Project struct {
@@ -44,8 +49,9 @@ func Init(root string) (*Project, error) {
 		}
 	}
 	cfg := File{
-		Version:        1,
-		ProjectionMode: DefaultProjection,
+		Version:    1,
+		MountMode:  DefaultMountMode,
+		ExposeMode: DefaultExposeMode,
 	}
 	data, err := yaml.Marshal(&cfg)
 	if err != nil {
@@ -73,8 +79,21 @@ func Load(cwd string) (*Project, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
-	if cfg.ProjectionMode == "" {
-		cfg.ProjectionMode = DefaultProjection
+	if cfg.MountMode == "" {
+		if cfg.ProjectionMode != "" {
+			cfg.MountMode = cfg.ProjectionMode
+		} else {
+			cfg.MountMode = DefaultMountMode
+		}
+	}
+	if cfg.PublishMode == "" {
+		if cfg.ProjectionMode != "" {
+			cfg.PublishMode = cfg.ProjectionMode
+		} else if cfg.ExposeMode != "" {
+			cfg.PublishMode = cfg.ExposeMode
+		} else {
+			cfg.PublishMode = DefaultExposeMode
+		}
 	}
 	return &Project{Root: root, Config: cfg}, nil
 }
@@ -109,6 +128,10 @@ func StepDir(root, runID, step string) string {
 }
 
 func SpecPath(root string) string {
+	hidden := filepath.Join(root, HiddenSpecName)
+	if _, err := os.Stat(hidden); err == nil {
+		return hidden
+	}
 	return filepath.Join(root, DefaultSpecName)
 }
 

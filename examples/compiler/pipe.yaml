@@ -1,0 +1,34 @@
+version: 1
+
+pipelines:
+  - name: compiler-demo
+    steps:
+      - name: parse
+        kind: shell
+        run: tr -cs '[:alnum:]' '\n' < source.expr > "$PIPE_STEP_OUT/tokens.txt"
+        inputs:
+          - source: source.expr
+        outputs:
+          - name: tokens
+            path: tokens.txt
+            type: file
+
+      - name: typecheck
+        kind: shell
+        run: awk '{print "typed:" $0}' "$PIPE_INPUT_tokens" > "$PIPE_STEP_OUT/typed.txt"
+        inputs:
+          - from: parse/tokens
+        outputs:
+          - name: typed_ast
+            path: typed.txt
+            type: file
+
+      - name: codegen
+        kind: shell
+        run: sed 's/^typed:/emit /' "$PIPE_INPUT_typed_ast" > "$PIPE_STEP_OUT/program.txt"
+        inputs:
+          - from: typecheck/typed_ast
+        outputs:
+          - name: program
+            path: program.txt
+            type: file

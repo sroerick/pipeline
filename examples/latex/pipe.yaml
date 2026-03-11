@@ -1,0 +1,48 @@
+version: 1
+
+pipelines:
+  - name: thesis
+    steps:
+      - name: latex1
+        kind: shell
+        run: pdflatex -interaction=nonstopmode -output-directory "$PIPE_STEP_OUT" thesis.tex
+        inputs:
+          - source: thesis.tex
+          - source: refs.bib
+        outputs:
+          - name: aux
+            path: thesis.aux
+            type: file
+          - name: log
+            path: thesis.log
+            type: file
+          - name: toc
+            path: thesis.toc
+            type: file
+
+      - name: bibtex
+        kind: shell
+        run: bibtex "$PIPE_INPUT_aux"
+        inputs:
+          - from: latex1/aux
+        outputs:
+          - name: bbl
+            path: thesis.bbl
+            type: file
+          - name: blg
+            path: thesis.blg
+            type: file
+
+      - name: latex2
+        kind: shell
+        run: pdflatex -interaction=nonstopmode -output-directory "$PIPE_STEP_OUT" thesis.tex
+        inputs:
+          - source: thesis.tex
+          - from: bibtex/bbl
+        outputs:
+          - name: pdf
+            path: thesis.pdf
+            type: file
+          - name: log
+            path: thesis.log
+            type: file

@@ -1,0 +1,24 @@
+version: 1
+
+pipelines:
+  - name: text-demo
+    steps:
+      - name: copy
+        kind: shell
+        run: cat input.txt > "$PIPE_STEP_OUT/copied.txt"
+        inputs:
+          - source: input.txt
+        outputs:
+          - name: text
+            path: copied.txt
+            type: file
+
+      - name: upper
+        kind: shell
+        run: tr '[:lower:]' '[:upper:]' < "$PIPE_INPUT_text" > "$PIPE_STEP_OUT/result.txt"
+        inputs:
+          - from: copy/text
+        outputs:
+          - name: result
+            path: result.txt
+            type: file

@@ -37,12 +37,17 @@ type InputRef struct {
 }
 
 type OutputDecl struct {
-	Name string `yaml:"name"`
-	Path string `yaml:"path"`
-	Type string `yaml:"type"`
+	Name    string `yaml:"name"`
+	Path    string `yaml:"path"`
+	Type    string `yaml:"type"`
+	Publish string `yaml:"publish"`
 }
 
 func Load(path string) (*Spec, error) {
+	return LoadFrom(path, filepath.Dir(path))
+}
+
+func LoadFrom(path, projectRoot string) (*Spec, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -51,7 +56,7 @@ func Load(path string) (*Spec, error) {
 	if err := yaml.Unmarshal(data, &spec); err != nil {
 		return nil, err
 	}
-	if err := spec.Validate(filepath.Dir(path)); err != nil {
+	if err := spec.Validate(projectRoot); err != nil {
 		return nil, err
 	}
 	return &spec, nil
@@ -113,6 +118,15 @@ func (p Pipeline) Validate(projectRoot string) error {
 			}
 			if out.Type != "file" && out.Type != "dir" {
 				return fmt.Errorf("step %s output %s has unsupported type %q", step.Name, out.Name, out.Type)
+			}
+			if out.Publish != "" {
+				if filepath.IsAbs(out.Publish) {
+					return fmt.Errorf("step %s output %s publish path must be relative", step.Name, out.Name)
+				}
+				cleaned := filepath.Clean(out.Publish)
+				if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+					return fmt.Errorf("step %s output %s publish path escapes project root", step.Name, out.Name)
+				}
 			}
 			if _, ok := outputNames[out.Name]; ok {
 				return fmt.Errorf("step %s output %s is duplicated", step.Name, out.Name)
