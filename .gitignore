@@ -1,0 +1,10 @@
+.pipe/
+
+# Go build artifacts
+/pipe
+*.test
+*.out
+coverage.out
+
+# Editor/OS noise
+.DS_Store
