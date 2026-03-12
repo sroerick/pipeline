@@ -4,6 +4,8 @@
 
 It stores declared outputs under `.pipe/objects`, records runs and provenance in `.pipe/db.sqlite`, and lets you inspect or materialize artifacts later with human-readable refs.
 
+The canonical user-edited pipeline definition lives in `pipe.yaml` at the project root.
+
 ## human written note
 
 pipe is vibeslop. I'm just publishing it so that I have access to it to install from Github. Right now, the only thing I've actually used it for is making cute LaTeX greeting cards. It lets me keep a clean folder and hide all the intermediate .tex files inside a hidden folder.  
@@ -26,6 +28,22 @@ This repository implements the v1 command set from [spec.md](./spec.md):
 - `pipe log [pipeline-or-run]`
 - `pipe provenance <ref>`
 
+The short command list undersells the current implementation somewhat. The
+repository also includes:
+
+- multiple runnable example projects under [`examples/`](./examples/)
+- internal tests for CLI flows, config loading, refs, and example spec loading
+- content-addressed artifact storage with publish and provenance inspection
+- pipeline inheritance with `extends` for shared build graphs
+- artifact reuse via `inputs[].ref` and built-in comparison steps via `kind: assert`
+
+The main limits are about scope, not whether the basic workflow exists:
+
+- `pipe` runs locally on the machine or CI runner that invokes it
+- metadata currently depends on the external `sqlite3` binary
+- `pipe` does not yet provide remote execution, hosted runners, or cross-job
+  workflow orchestration
+
 ## Build
 
 Requirements:
@@ -40,6 +58,31 @@ go build ./cmd/pipe
 ```
 
 The current implementation uses the local `sqlite3` binary for metadata access, so that binary must be installed anywhere you run `pipe`.
+
+## CI usage
+
+`pipe` is suitable for CI today if you treat it as the project-local build graph
+and artifact/provenance layer.
+
+A good fit looks like this:
+
+- your CI platform chooses the runner OS and machine
+- each job invokes `pipe run <pipeline>`
+- final outputs are materialized with declared `publish` paths or explicit
+  `pipe publish` calls
+- `pipe log`, `pipe show`, and `pipe provenance` are used for failure analysis
+
+That means `pipe` can already be used for:
+
+- release packaging jobs on Linux and Windows
+- reproducible plugin or docs build pipelines
+- local dogfooding of the exact commands that CI will later run
+
+What `pipe` is not trying to be, at least in v1:
+
+- a CI hosting platform
+- a scheduler across multiple machines
+- a replacement for workflow-level matrix or fan-out/fan-in features
 
 ## Quick start
 
@@ -161,9 +204,50 @@ The runner injects:
 - `PIPE_RUN_ID`
 - `PIPE_STEP_NAME`
 - `PIPE_STEP_OUT`
-- `PIPE_INPUT_<output-name>` for prior-step inputs declared with `from`
+- `PIPE_INPUT_<name-or-output-name>` for prior-step inputs declared with `from` or `ref`
 
 If an output is declared as `name: typed-ast`, the input env var becomes `PIPE_INPUT_typed_ast`.
+
+If an input declaration includes `name: baseline`, that input becomes `PIPE_INPUT_baseline`.
+
+## Reuse And Verification
+
+`pipe.yaml` can define a shared build pipeline and a derived verification pipeline in the same project.
+
+```yaml
+version: 1
+
+pipelines:
+  - name: build
+    steps:
+      - name: render
+        kind: shell
+        run: cat input.txt > "$PIPE_STEP_OUT/out.txt"
+        inputs:
+          - source: input.txt
+        outputs:
+          - name: text
+            path: out.txt
+            type: file
+
+  - name: verify
+    extends: build
+    steps:
+      - name: compare
+        kind: assert
+        inputs:
+          - from: render/text
+          - ref: build:render/text
+        assert:
+          trim_space: true
+        outputs:
+          - name: report
+            path: report.txt
+            type: file
+            publish: out/report.txt
+```
+
+That shape is useful for parity checks such as comparing a newly generated dump to a cached reference artifact without pushing anything to production.
 
 ## Publish behavior
 
@@ -188,13 +272,15 @@ The `publish` target must stay within the project root. During `run`, any publis
 
 - [`examples/text`](./examples/text): small, fully runnable text-processing pipeline.
 - [`examples/compiler`](./examples/compiler): compiler-shaped pipeline with parse/typecheck/codegen stages using standard shell tools.
+- [`examples/quotes`](./examples/quotes): script-driven quote-card PDF pipeline using `python3`, `patch`, and `pdflatex`.
 - [`examples/latex`](./examples/latex): LaTeX-style multi-stage template matching the original spec. This one expects TeX tools such as `pdflatex` and `bibtex`.
 
 Suggested order:
 
 1. Start with `examples/text`.
 2. Move to `examples/compiler` once the ref model makes sense.
-3. Use `examples/latex` only if you have the TeX toolchain installed.
+3. Try `examples/quotes` if you want a more real script-driven pipeline with a single final PDF artifact.
+4. Use `examples/latex` only if you have the TeX toolchain installed.
 
 ## Storage layout
 

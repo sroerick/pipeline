@@ -35,6 +35,11 @@ Do **not** implement:
 
 v1 should be a local, project-scoped CLI tool.
 
+Using `pipe` inside a CI job is still in scope for v1. The non-goal is replacing
+the CI platform itself. In other words: `pipe` may be the build graph and
+artifact manager that a runner executes, while job scheduling, machine
+selection, and cross-runner orchestration stay outside the tool.
+
 ## 3. Core concepts
 
 ### Pipeline
@@ -118,6 +123,7 @@ Behavior:
 - load pipeline spec
 - validate DAG
 - execute steps in dependency order
+- print per-step progress while the run is active
 - capture outputs into managed storage
 - write run manifest
 - write metadata to SQLite
@@ -183,6 +189,7 @@ Supported forms for v1:
 ```text
 <pipeline>:<step>
 <pipeline>:<step>/<output>
+run:<run-id>
 run:<run-id>:<step>
 run:<run-id>:<step>/<output>
 alias:<name>
@@ -265,19 +272,55 @@ pipelines:
             type: file
 ```
 
+Pipelines may also inherit shared steps from another pipeline:
+
+```yaml
+pipelines:
+  - name: build
+    steps:
+      - name: render
+        kind: shell
+        run: cat input.txt > "$PIPE_STEP_OUT/out.txt"
+        inputs:
+          - source: input.txt
+        outputs:
+          - name: text
+            path: out.txt
+            type: file
+
+  - name: verify
+    extends: build
+    steps:
+      - name: compare
+        kind: assert
+        inputs:
+          - from: render/text
+          - ref: build:render/text
+        assert:
+          trim_space: true
+        outputs:
+          - name: report
+            path: report.txt
+            type: file
+```
+
 ## 8. Pipeline semantics
 
 ### Step kinds
 Support these values in v1:
 - `shell`
 - `exec`
+- `assert`
 
 You may internally treat both similarly, but keep the field for future evolution.
 
+`assert` is a built-in comparison step for file artifacts. In v1 it compares exactly two file inputs, writes a report artifact, and fails the run if the normalized contents differ.
+
 ### Inputs
-Support two kinds of inputs:
+Support three kinds of inputs:
 - `source`: path from the project working tree
 - `from`: reference to a prior step output
+- `ref`: reference to an artifact from another pipeline or prior run
 
 Examples:
 
@@ -285,7 +328,10 @@ Examples:
 inputs:
   - source: thesis.tex
   - from: latex1/aux
+  - ref: baseline:latex2/pdf
 ```
+
+Inputs may optionally provide `name`. If present, the runner exposes that input as `PIPE_INPUT_<name>`; otherwise `from` and `ref` inputs use the output name.
 
 ### Outputs
 Each output declaration must include:
@@ -313,6 +359,16 @@ Optional field:
 - `important`
 
 Retention may be recorded in metadata in v1, but garbage collection does not need to be fully implemented.
+
+### Pipeline inheritance
+
+Pipelines may specify `extends: <pipeline-name>` to prepend all steps from the base pipeline before the derived pipeline's own steps. Step names must remain unique after expansion.
+
+This is intended for workflows such as:
+
+- building once, then verifying against a cached reference artifact
+- keeping a production-like build flow and a local-only parity flow in the same `pipe.yaml`
+- reusing extraction/build steps across multiple publish or validation pipelines
 
 ## 9. Execution model
 

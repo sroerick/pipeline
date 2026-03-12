@@ -1,0 +1,41 @@
+version: 1
+
+pipelines:
+  - name: quotes-build
+    steps:
+      - name: render
+        kind: shell
+        run: python3 scripts/markdown_to_quotes_tex.py Quotes.md > "$PIPE_STEP_OUT/base.tex"
+        inputs:
+          - source: Quotes.md
+          - source: scripts/markdown_to_quotes_tex.py
+        outputs:
+          - name: base_tex
+            path: base.tex
+            type: file
+
+      - name: apply_overrides
+        kind: shell
+        run: python3 scripts/apply_patchset.py "$PIPE_INPUT_base_tex" edits/quote-fixes.patch > "$PIPE_STEP_OUT/final.tex"
+        inputs:
+          - from: render/base_tex
+          - source: scripts/apply_patchset.py
+          - source: edits/quote-fixes.patch
+        outputs:
+          - name: final_tex
+            path: final.tex
+            type: file
+
+      - name: compile
+        kind: shell
+        run: cp "$PIPE_INPUT_final_tex" "$PIPE_STEP_OUT/document.tex" && pdflatex -interaction=nonstopmode -halt-on-error -output-directory "$PIPE_STEP_OUT" "$PIPE_STEP_OUT/document.tex"
+        inputs:
+          - from: apply_overrides/final_tex
+        outputs:
+          - name: pdf
+            path: document.pdf
+            type: file
+            publish: out/quotes.pdf
+          - name: log
+            path: document.log
+            type: file

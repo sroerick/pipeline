@@ -11,8 +11,6 @@ import (
 )
 
 func TestCLIEndToEnd(t *testing.T) {
-	t.Parallel()
-
 	projectDir := t.TempDir()
 	writeFile(t, filepath.Join(projectDir, "input.txt"), "hello pipeline\n")
 	writeFile(t, filepath.Join(projectDir, "pipe.yaml"), `
@@ -130,6 +128,88 @@ pipelines:
 	}
 	if len(aliases) == 0 || aliases[0].Name != "current" {
 		t.Fatalf("expected current alias, got %+v", aliases)
+	}
+}
+
+func TestCLIExtendsRefAndAssert(t *testing.T) {
+	projectDir := t.TempDir()
+	writeFile(t, filepath.Join(projectDir, "input.txt"), "hello pipeline\n")
+	writeFile(t, filepath.Join(projectDir, "pipe.yaml"), `
+version: 1
+
+pipelines:
+  - name: build
+    steps:
+      - name: copy
+        kind: shell
+        run: cat input.txt > "$PIPE_STEP_OUT/copied.txt"
+        inputs:
+          - source: input.txt
+        outputs:
+          - name: text
+            path: copied.txt
+            type: file
+
+      - name: upper
+        kind: shell
+        run: tr '[:lower:]' '[:upper:]' < "$PIPE_INPUT_text" > "$PIPE_STEP_OUT/result.txt"
+        inputs:
+          - from: copy/text
+        outputs:
+          - name: result
+            path: result.txt
+            type: file
+
+  - name: verify
+    extends: build
+    steps:
+      - name: compare
+        kind: assert
+        inputs:
+          - name: fresh
+            from: upper/result
+          - name: cached
+            ref: build:upper/result
+        assert:
+          trim_space: true
+        outputs:
+          - name: report
+            path: report.txt
+            type: file
+            publish: out/report.txt
+`)
+
+	previousWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(previousWD)
+	})
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	for _, args := range [][]string{
+		{"init"},
+		{"run", "build"},
+		{"run", "verify"},
+		{"show", "verify:compare/report"},
+		{"provenance", "verify:compare/report"},
+	} {
+		if err := Run(ctx, args); err != nil {
+			t.Fatalf("Run(%v): %v", args, err)
+		}
+	}
+
+	reportPath := filepath.Join(projectDir, "out", "report.txt")
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); got != "assert ok: upper/result == build:upper/result\n" {
+		t.Fatalf("report content = %q", got)
 	}
 }
 

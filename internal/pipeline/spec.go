@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -17,8 +18,9 @@ type Spec struct {
 }
 
 type Pipeline struct {
-	Name  string `yaml:"name"`
-	Steps []Step `yaml:"steps"`
+	Name    string `yaml:"name"`
+	Extends string `yaml:"extends"`
+	Steps   []Step `yaml:"steps"`
 }
 
 type Step struct {
@@ -29,11 +31,14 @@ type Step struct {
 	Outputs   []OutputDecl      `yaml:"outputs"`
 	Env       map[string]string `yaml:"env"`
 	Retention string            `yaml:"retention"`
+	Assert    *AssertSpec       `yaml:"assert"`
 }
 
 type InputRef struct {
+	Name   string `yaml:"name"`
 	Source string `yaml:"source"`
 	From   string `yaml:"from"`
+	Ref    string `yaml:"ref"`
 }
 
 type OutputDecl struct {
@@ -41,6 +46,12 @@ type OutputDecl struct {
 	Path    string `yaml:"path"`
 	Type    string `yaml:"type"`
 	Publish string `yaml:"publish"`
+}
+
+type AssertSpec struct {
+	SortLines          bool     `yaml:"sort_lines"`
+	TrimSpace          bool     `yaml:"trim_space"`
+	IgnoreLinePrefixes []string `yaml:"ignore_line_prefixes"`
 }
 
 func Load(path string) (*Spec, error) {
@@ -78,7 +89,11 @@ func (s *Spec) Validate(projectRoot string) error {
 			return fmt.Errorf("duplicate pipeline %q", p.Name)
 		}
 		seenPipelines[p.Name] = struct{}{}
-		if err := p.Validate(projectRoot); err != nil {
+		resolved, err := s.resolvePipeline(p.Name, nil)
+		if err != nil {
+			return err
+		}
+		if err := resolved.Validate(projectRoot); err != nil {
 			return fmt.Errorf("pipeline %s: %w", p.Name, err)
 		}
 	}
@@ -99,14 +114,18 @@ func (p Pipeline) Validate(projectRoot string) error {
 			return fmt.Errorf("duplicate step %q", step.Name)
 		}
 		stepNames[step.Name] = struct{}{}
-		if step.Kind == "" {
-			step.Kind = "shell"
+		kind := step.Kind
+		if kind == "" {
+			kind = "shell"
 		}
-		if step.Kind != "shell" && step.Kind != "exec" {
+		if kind != "shell" && kind != "exec" && kind != "assert" {
 			return fmt.Errorf("step %s has unsupported kind %q", step.Name, step.Kind)
 		}
-		if strings.TrimSpace(step.Run) == "" {
+		if kind != "assert" && strings.TrimSpace(step.Run) == "" {
 			return fmt.Errorf("step %s has empty command", step.Name)
+		}
+		if kind == "assert" && step.Assert == nil {
+			return fmt.Errorf("step %s kind assert requires assert configuration", step.Name)
 		}
 		outputNames := map[string]struct{}{}
 		if len(step.Outputs) == 0 {
@@ -137,6 +156,19 @@ func (p Pipeline) Validate(projectRoot string) error {
 	}
 	for _, step := range p.Steps {
 		for _, in := range step.Inputs {
+			count := 0
+			if in.Source != "" {
+				count++
+			}
+			if in.From != "" {
+				count++
+			}
+			if in.Ref != "" {
+				count++
+			}
+			if count != 1 {
+				return fmt.Errorf("step %s input must set exactly one of source/from/ref", step.Name)
+			}
 			switch {
 			case in.Source != "":
 				if _, err := os.Stat(filepath.Join(projectRoot, in.Source)); err != nil {
@@ -153,8 +185,12 @@ func (p Pipeline) Validate(projectRoot string) error {
 				if _, ok := outputsByStep[prevStep][outName]; !ok {
 					return fmt.Errorf("step %s input references unknown output %q on step %s", step.Name, outName, prevStep)
 				}
+			case in.Ref != "":
+				if _, err := ParseRef(in.Ref); err != nil {
+					return fmt.Errorf("step %s input ref %q: %w", step.Name, in.Ref, err)
+				}
 			default:
-				return fmt.Errorf("step %s has input missing source/from", step.Name)
+				return fmt.Errorf("step %s has input missing source/from/ref", step.Name)
 			}
 		}
 	}
@@ -164,7 +200,11 @@ func (p Pipeline) Validate(projectRoot string) error {
 func (s *Spec) ResolvePipeline(name string) (*Pipeline, error) {
 	if name == "" {
 		if len(s.Pipelines) == 1 {
-			return &s.Pipelines[0], nil
+			resolved, err := s.resolvePipeline(s.Pipelines[0].Name, nil)
+			if err != nil {
+				return nil, err
+			}
+			return &resolved, nil
 		}
 		var names []string
 		for _, p := range s.Pipelines {
@@ -175,7 +215,11 @@ func (s *Spec) ResolvePipeline(name string) (*Pipeline, error) {
 	}
 	for i := range s.Pipelines {
 		if s.Pipelines[i].Name == name {
-			return &s.Pipelines[i], nil
+			resolved, err := s.resolvePipeline(name, nil)
+			if err != nil {
+				return nil, err
+			}
+			return &resolved, nil
 		}
 	}
 	return nil, fmt.Errorf("unknown pipeline %q", name)
@@ -196,4 +240,32 @@ func ParseStepOutputRef(value string) (string, string, error) {
 		return "", "", fmt.Errorf("invalid step output ref %q", value)
 	}
 	return step, output, nil
+}
+
+func (s *Spec) resolvePipeline(name string, stack []string) (Pipeline, error) {
+	index := map[string]Pipeline{}
+	for _, p := range s.Pipelines {
+		index[p.Name] = p
+	}
+	return resolvePipelineFromIndex(index, name, stack)
+}
+
+func resolvePipelineFromIndex(index map[string]Pipeline, name string, stack []string) (Pipeline, error) {
+	p, ok := index[name]
+	if !ok {
+		return Pipeline{}, fmt.Errorf("unknown pipeline %q", name)
+	}
+	if slices.Contains(stack, name) {
+		return Pipeline{}, fmt.Errorf("pipeline inheritance cycle detected at %q", name)
+	}
+	if p.Extends == "" {
+		return p, nil
+	}
+	base, err := resolvePipelineFromIndex(index, p.Extends, append(stack, name))
+	if err != nil {
+		return Pipeline{}, err
+	}
+	merged := Pipeline{Name: p.Name, Steps: append([]Step{}, base.Steps...)}
+	merged.Steps = append(merged.Steps, p.Steps...)
+	return merged, nil
 }

@@ -16,15 +16,17 @@ import (
 	"pipe/internal/graph"
 	"pipe/internal/manifest"
 	"pipe/internal/pipeline"
+	"pipe/internal/resolve"
 	"pipe/internal/runner"
 	"pipe/internal/store"
 	"pipe/internal/workspace"
 )
 
 type Engine struct {
-	project *config.Project
-	db      *db.DB
-	store   *store.Store
+	project  *config.Project
+	db       *db.DB
+	store    *store.Store
+	reporter Reporter
 }
 
 type RunResult struct {
@@ -40,12 +42,28 @@ type resolvedInput struct {
 	artifact *db.ArtifactRecord
 }
 
+type Reporter interface {
+	StepStarted(runID, pipelineName string, step pipeline.Step)
+	StepFinished(runID, pipelineName string, step manifest.Step)
+}
+
+type noopReporter struct{}
+
+func (noopReporter) StepStarted(string, string, pipeline.Step)  {}
+func (noopReporter) StepFinished(string, string, manifest.Step) {}
+
 func New(project *config.Project, database *db.DB) *Engine {
 	return &Engine{
-		project: project,
-		db:      database,
-		store:   store.New(project.Root),
+		project:  project,
+		db:       database,
+		store:    store.New(project.Root),
+		reporter: noopReporter{},
 	}
+}
+
+func (e *Engine) WithReporter(reporter Reporter) *Engine {
+	e.reporter = reporter
+	return e
 }
 
 func (e *Engine) RunPipeline(ctx context.Context, pipelineName string) (*RunResult, error) {
@@ -62,7 +80,7 @@ func (e *Engine) RunPipeline(ctx context.Context, pipelineName string) (*RunResu
 		return nil, err
 	}
 	now := time.Now().UTC()
-	runID := now.Format("20060102_150405_000000000")
+	runID := fmt.Sprintf("%s_%09d", now.Format("20060102_150405"), now.Nanosecond())
 	runRoot := filepath.Join(e.project.Root, ".pipe", "runs", runID)
 	if err := fsx.EnsureDir(filepath.Join(runRoot, "steps")); err != nil {
 		return nil, err
@@ -85,7 +103,9 @@ func (e *Engine) RunPipeline(ctx context.Context, pipelineName string) (*RunResu
 	artifactsByOutput := map[string]db.ArtifactRecord{}
 	var runErr error
 	for _, step := range ordered {
+		e.reporter.StepStarted(runID, def.Name, step)
 		stepManifest, produced, err := e.executeStep(ctx, runID, step, artifactsByOutput)
+		e.reporter.StepFinished(runID, def.Name, stepManifest)
 		manifestRun.Steps = append(manifestRun.Steps, stepManifest)
 		for key, value := range produced {
 			artifactsByOutput[key] = value
@@ -150,12 +170,20 @@ func (e *Engine) executeStep(ctx context.Context, runID string, step pipeline.St
 	for key, value := range step.Env {
 		env = append(env, key+"="+value)
 	}
-	result, runErr := runner.Run(ctx, runner.Request{
-		Kind:    step.Kind,
-		Command: step.Run,
-		Dir:     e.project.Root,
-		Env:     env,
-	})
+	var (
+		result runner.Result
+		runErr error
+	)
+	if step.Kind == "assert" {
+		result, runErr = runAssertStep(ctx, workDir, step, resolvedInputs)
+	} else {
+		result, runErr = runner.Run(ctx, runner.Request{
+			Kind:    step.Kind,
+			Command: step.Run,
+			Dir:     e.project.Root,
+			Env:     env,
+		})
+	}
 	stdoutPath := filepath.Join(stepDir, "stdout.txt")
 	stderrPath := filepath.Join(stepDir, "stderr.txt")
 	if err := fsx.AtomicWriteFile(stdoutPath, result.Stdout, 0o644); err != nil {
@@ -201,9 +229,6 @@ func (e *Engine) executeStep(ctx context.Context, runID string, step pipeline.St
 	}); err != nil {
 		return manifest.Step{}, nil, err
 	}
-	if runErr != nil {
-		return stepManifest, nil, fmt.Errorf("step %s failed: %w", step.Name, runErr)
-	}
 	produced := map[string]db.ArtifactRecord{}
 	for _, out := range step.Outputs {
 		resolvedPath, err := fsx.SafeJoin(workDir, out.Path)
@@ -212,6 +237,9 @@ func (e *Engine) executeStep(ctx context.Context, runID string, step pipeline.St
 		}
 		info, err := os.Stat(resolvedPath)
 		if err != nil {
+			if runErr != nil {
+				continue
+			}
 			stepManifest.Status = "failed"
 			stepManifest.Error = fmt.Sprintf("declared output missing after step execution: %s", out.Name)
 			_ = e.db.UpsertStep(db.StepRecord{
@@ -270,6 +298,9 @@ func (e *Engine) executeStep(ctx context.Context, runID string, step pipeline.St
 			}
 		}
 	}
+	if runErr != nil {
+		return stepManifest, produced, fmt.Errorf("step %s failed: %w", step.Name, runErr)
+	}
 	return stepManifest, produced, nil
 }
 
@@ -306,7 +337,7 @@ func (e *Engine) resolveInputs(inputs []pipeline.InputRef, prior map[string]db.A
 			if err != nil {
 				return nil, nil, err
 			}
-			env = append(env, "PIPE_INPUT_"+sanitizeEnvName(outputName)+"="+storedPath)
+			env = append(env, "PIPE_INPUT_"+sanitizeEnvName(inputEnvName(input.Name, outputName))+"="+storedPath)
 			resolved = append(resolved, resolvedInput{
 				manifest: manifest.Input{
 					Kind:         "from",
@@ -316,8 +347,32 @@ func (e *Engine) resolveInputs(inputs []pipeline.InputRef, prior map[string]db.A
 				},
 				artifact: &artifact,
 			})
+		case input.Ref != "":
+			ref, err := resolve.Alias(e.db, input.Ref)
+			if err != nil {
+				return nil, nil, err
+			}
+			resolvedRef, err := resolve.Ref(e.project.Root, e.db, ref)
+			if err != nil {
+				return nil, nil, err
+			}
+			if resolvedRef.Artifact == nil {
+				return nil, nil, fmt.Errorf("input ref %s did not resolve to an artifact", input.Ref)
+			}
+			name := inputEnvName(input.Name, resolvedRef.Artifact.OutputName)
+			env = append(env, "PIPE_INPUT_"+sanitizeEnvName(name)+"="+resolvedRef.StoredPath)
+			artifact := *resolvedRef.Artifact
+			resolved = append(resolved, resolvedInput{
+				manifest: manifest.Input{
+					Kind:         "ref",
+					Ref:          input.Ref,
+					ResolvedPath: resolvedRef.StoredPath,
+					ObjectRef:    artifact.ObjectRef,
+				},
+				artifact: &artifact,
+			})
 		default:
-			return nil, nil, errors.New("input missing source/from")
+			return nil, nil, errors.New("input missing source/from/ref")
 		}
 	}
 	return resolved, env, nil
@@ -374,5 +429,13 @@ func artifactKey(step, output string) string {
 func sanitizeEnvName(value string) string {
 	value = strings.ReplaceAll(value, "-", "_")
 	value = strings.ReplaceAll(value, ".", "_")
+	value = strings.ReplaceAll(value, "/", "_")
 	return value
+}
+
+func inputEnvName(explicit, fallback string) string {
+	if explicit != "" {
+		return explicit
+	}
+	return fallback
 }
