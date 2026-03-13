@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"pipe/internal/fsx"
+	"pakkun/internal/fsx"
 )
 
 type Mode string

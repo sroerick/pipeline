@@ -10,12 +10,12 @@ Expected tools:
 From the repository root:
 
 ```bash
-go build -o ./pipe ./cmd/pipe
+go build -o ./pakkun ./cmd/pakkun
 cd examples/latex
-../../pipe init
-../../pipe run thesis
-../../pipe show thesis:latex2/pdf
-../../pipe publish thesis:latex2/pdf ./build/thesis.pdf
+../../pakkun init
+../../pakkun run thesis
+../../pakkun show thesis:latex2/pdf
+../../pakkun publish thesis:latex2/pdf ./build/thesis.pdf
 ```
 
 This example demonstrates:

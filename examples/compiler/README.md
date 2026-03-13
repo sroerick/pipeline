@@ -11,12 +11,12 @@ It has three steps:
 From the repository root:
 
 ```bash
-go build -o ./pipe ./cmd/pipe
+go build -o ./pakkun ./cmd/pakkun
 cd examples/compiler
-../../pipe init
-../../pipe run compiler-demo
-../../pipe show compiler-demo:codegen/program
-../../pipe publish compiler-demo:codegen/program ./build/program.txt
+../../pakkun init
+../../pakkun run compiler-demo
+../../pakkun show compiler-demo:codegen/program
+../../pakkun publish compiler-demo:codegen/program ./build/program.txt
 cat ./build/program.txt
 ```
 

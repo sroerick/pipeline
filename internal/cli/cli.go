@@ -3,22 +3,25 @@ package cli
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"pipe/internal/config"
-	"pipe/internal/db"
-	"pipe/internal/engine"
-	"pipe/internal/fsx"
-	"pipe/internal/manifest"
-	"pipe/internal/pipeline"
-	"pipe/internal/resolve"
-	"pipe/internal/store"
-	"pipe/internal/ui"
-	"pipe/internal/workspace"
+	"pakkun/internal/config"
+	"pakkun/internal/db"
+	"pakkun/internal/engine"
+	"pakkun/internal/fsx"
+	"pakkun/internal/manifest"
+	"pakkun/internal/pipeline"
+	"pakkun/internal/resolve"
+	"pakkun/internal/store"
+	"pakkun/internal/ui"
+	"pakkun/internal/webui"
+	"pakkun/internal/workspace"
 )
 
 func Run(ctx context.Context, args []string) error {
@@ -44,17 +47,17 @@ func Run(ctx context.Context, args []string) error {
 		return cmdStatus()
 	case "show":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: pipe show <ref>")
+			return fmt.Errorf("usage: pakkun show <ref>")
 		}
 		return cmdShow(args[1])
 	case "mount":
 		if len(args) != 3 {
-			return fmt.Errorf("usage: pipe mount <ref> <dir>")
+			return fmt.Errorf("usage: pakkun mount <ref> <dir>")
 		}
 		return cmdMount(args[1], args[2])
 	case "publish":
 		if len(args) != 3 {
-			return fmt.Errorf("usage: pipe publish <ref> <path>")
+			return fmt.Errorf("usage: pakkun publish <ref> <path>")
 		}
 		return cmdPublish(args[1], args[2])
 	case "log":
@@ -65,9 +68,11 @@ func Run(ctx context.Context, args []string) error {
 		return cmdLog(target)
 	case "provenance":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: pipe provenance <ref>")
+			return fmt.Errorf("usage: pakkun provenance <ref>")
 		}
 		return cmdProvenance(args[1])
+	case "ui":
+		return cmdUI(ctx, args[1:])
 	default:
 		return usage()
 	}
@@ -86,7 +91,7 @@ func cmdInit() error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("initialized pipe project in", filepath.Join(project.Root, ".pipe"))
+	fmt.Println("initialized pakkun project in", filepath.Join(project.Root, ".pipe"))
 	return nil
 }
 
@@ -394,6 +399,21 @@ func cmdProvenance(rawRef string) error {
 	return nil
 }
 
+func cmdUI(ctx context.Context, args []string) error {
+	flags := flag.NewFlagSet("ui", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	addr := flags.String("addr", "127.0.0.1:0", "listen address")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	project, database, err := openProject()
+	if err != nil {
+		return err
+	}
+	defer database.Close()
+	return webui.Serve(ctx, project, database, *addr, os.Stdout)
+}
+
 func openProject() (*config.Project, *db.DB, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -478,7 +498,7 @@ func printArtifactProvenance(database *db.DB, artifact *db.ArtifactRecord) error
 }
 
 func usage() error {
-	return fmt.Errorf("usage: pipe <init|run|stages|status|show|mount|publish|log|provenance>")
+	return fmt.Errorf("usage: pakkun <init|run|stages|status|show|mount|publish|log|provenance|ui>")
 }
 
 type cliReporter struct{}

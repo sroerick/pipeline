@@ -8,8 +8,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"pipe/internal/db"
-	"pipe/internal/fsx"
+	"pakkun/internal/db"
+	"pakkun/internal/fsx"
 )
 
 const (
@@ -109,7 +109,7 @@ func FindRoot(start string) (string, error) {
 		}
 		parent := filepath.Dir(current)
 		if parent == current {
-			return "", errors.New("project not initialized; run `pipe init`")
+			return "", errors.New("project not initialized; run `pakkun init`")
 		}
 		current = parent
 	}
@@ -137,7 +137,7 @@ func SpecPath(root string) string {
 
 func EnsureInitialized(root string) error {
 	if _, err := os.Stat(filepath.Join(root, ConfigRelative)); err != nil {
-		return fmt.Errorf("project not initialized; run `pipe init`")
+		return fmt.Errorf("project not initialized; run `pakkun init`")
 	}
 	return nil
 }

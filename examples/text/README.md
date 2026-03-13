@@ -1,6 +1,6 @@
 # Text Example
 
-This is the smallest runnable `pipe` project in the repository.
+This is the smallest runnable `pakkun` project in the repository.
 
 It has two steps:
 
@@ -10,12 +10,12 @@ It has two steps:
 From the repository root:
 
 ```bash
-go build -o ./pipe ./cmd/pipe
+go build -o ./pakkun ./cmd/pakkun
 cd examples/text
-../../pipe init
-../../pipe run text-demo
-../../pipe show text-demo:upper/result
-../../pipe publish text-demo:upper/result ./build/result.txt
+../../pakkun init
+../../pakkun run text-demo
+../../pakkun show text-demo:upper/result
+../../pakkun publish text-demo:upper/result ./build/result.txt
 cat ./build/result.txt
 ```
 
@@ -28,8 +28,8 @@ HELLO PIPELINE
 Good inspection commands:
 
 ```bash
-../../pipe stages
-../../pipe log
-../../pipe show text-demo:copy
-../../pipe provenance text-demo:upper/result
+../../pakkun stages
+../../pakkun log
+../../pakkun show text-demo:copy
+../../pakkun provenance text-demo:upper/result
 ```

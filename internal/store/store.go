@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"pipe/internal/fsx"
-	"pipe/internal/hash"
+	"pakkun/internal/fsx"
+	"pakkun/internal/hash"
 )
 
 type StoredObject struct {

@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	"pipe/internal/pipeline"
-	"pipe/internal/runner"
+	"pakkun/internal/pipeline"
+	"pakkun/internal/runner"
 )
 
 func runAssertStep(_ context.Context, workDir string, step pipeline.Step, inputs []resolvedInput) (runner.Result, error) {

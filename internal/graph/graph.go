@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"pipe/internal/pipeline"
+	"pakkun/internal/pipeline"
 )
 
 func TopoSort(p pipeline.Pipeline) ([]pipeline.Step, error) {

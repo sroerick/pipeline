@@ -1,6 +1,6 @@
-# pipe
+# pakkun
 
-`pipe` is a project-local CLI for running named transformation pipelines while keeping intermediate artifacts out of the working tree.
+`pakkun` is a project-local CLI for running named transformation pipelines while keeping intermediate artifacts out of the working tree.
 
 It stores declared outputs under `.pipe/objects`, records runs and provenance in `.pipe/db.sqlite`, and lets you inspect or materialize artifacts later with human-readable refs.
 
@@ -8,7 +8,7 @@ The canonical user-edited pipeline definition lives in `pipe.yaml` at the projec
 
 ## human written note
 
-pipe is vibeslop. I'm just publishing it so that I have access to it to install from Github. Right now, the only thing I've actually used it for is making cute LaTeX greeting cards. It lets me keep a clean folder and hide all the intermediate .tex files inside a hidden folder.  
+pakkun is vibeslop. I'm just publishing it so that I have access to it to install from Github. Right now, the only thing I've actually used it for is making cute LaTeX greeting cards. It lets me keep a clean folder and hide all the intermediate .tex files inside a hidden folder.  
 
 Structurally, this is git for ETL pipelines. You configure your pipeline stages in YAML, those can be basically any executable. You can track runs and stuff. It's really not much more than a Makefile right now, but I like it.
 
@@ -18,15 +18,16 @@ I have a few more use cases I'd like to run this through and I think it may beco
 
 This repository implements the v1 command set from [spec.md](./spec.md):
 
-- `pipe init`
-- `pipe run [pipeline]`
-- `pipe stages [pipeline-or-run]`
-- `pipe status`
-- `pipe show <ref>`
-- `pipe mount <ref> <dir>`
-- `pipe publish <ref> <path>`
-- `pipe log [pipeline-or-run]`
-- `pipe provenance <ref>`
+- `pakkun init`
+- `pakkun run [pipeline]`
+- `pakkun stages [pipeline-or-run]`
+- `pakkun status`
+- `pakkun show <ref>`
+- `pakkun mount <ref> <dir>`
+- `pakkun publish <ref> <path>`
+- `pakkun log [pipeline-or-run]`
+- `pakkun provenance <ref>`
+- `pakkun ui`
 
 The short command list undersells the current implementation somewhat. The
 repository also includes:
@@ -34,15 +35,34 @@ repository also includes:
 - multiple runnable example projects under [`examples/`](./examples/)
 - internal tests for CLI flows, config loading, refs, and example spec loading
 - content-addressed artifact storage with publish and provenance inspection
+- an experimental localhost web UI for browsing runs, artifacts, and provenance
 - pipeline inheritance with `extends` for shared build graphs
 - artifact reuse via `inputs[].ref` and built-in comparison steps via `kind: assert`
 
 The main limits are about scope, not whether the basic workflow exists:
 
-- `pipe` runs locally on the machine or CI runner that invokes it
+- `pakkun` runs locally on the machine or CI runner that invokes it
 - metadata currently depends on the external `sqlite3` binary
-- `pipe` does not yet provide remote execution, hosted runners, or cross-job
+- `pakkun` does not yet provide remote execution, hosted runners, or cross-job
   workflow orchestration
+
+## Experimental web UI
+
+`pakkun ui` starts a localhost-only web interface for the current initialized
+project. The UI is intentionally scoped to the same local data model as the CLI:
+
+- overview of pipelines, aliases, latest runs, and failed steps
+- pipeline detail with declared steps and publish targets
+- run detail with per-step status, captured stdout/stderr, and manifest JSON
+- artifact detail with provenance, safe text previews, download, and publish
+
+From an initialized project root:
+
+```bash
+pakkun ui
+```
+
+By default it binds to `127.0.0.1` on a random free port and prints the URL.
 
 ## Build
 
@@ -54,25 +74,28 @@ Requirements:
 Build the CLI:
 
 ```bash
-go build ./cmd/pipe
+go build ./cmd/pakkun
 ```
 
-The current implementation uses the local `sqlite3` binary for metadata access, so that binary must be installed anywhere you run `pipe`.
+The current implementation uses the local `sqlite3` binary for metadata access, so that binary must be installed anywhere you run `pakkun`.
+
+OpenBSD build and install notes for a server build box live in
+[`docs/openbsd-build.md`](./docs/openbsd-build.md).
 
 ## CI usage
 
-`pipe` is suitable for CI today if you treat it as the project-local build graph
+`pakkun` is suitable for CI today if you treat it as the project-local build graph
 and artifact/provenance layer.
 
 A good fit looks like this:
 
 - your CI platform chooses the runner OS and machine
-- each job invokes `pipe run <pipeline>`
+- each job invokes `pakkun run <pipeline>`
 - final outputs are materialized with declared `publish` paths or explicit
-  `pipe publish` calls
-- `pipe log`, `pipe show`, and `pipe provenance` are used for failure analysis
+  `pakkun publish` calls
+- `pakkun log`, `pakkun show`, and `pakkun provenance` are used for failure analysis
 
-That means `pipe` can already be used for:
+That means `pakkun` can already be used for:
 
 - release packaging jobs on Linux and Windows
 - reproducible plugin or docs build pipelines
@@ -91,36 +114,36 @@ The simplest runnable example lives in [`examples/text`](./examples/text).
 From the repository root:
 
 ```bash
-go build -o ./pipe ./cmd/pipe
+go build -o ./pakkun ./cmd/pakkun
 ```
 
 Then move into an example directory and use that binary against the local `pipe.yaml` in that directory:
 
 ```bash
 cd examples/text
-../../pipe init
-../../pipe run text-demo
-../../pipe stages text-demo
-../../pipe show text-demo:upper/result
-../../pipe publish text-demo:upper/result ./build/result.txt
-../../pipe provenance text-demo:upper/result
+../../pakkun init
+../../pakkun run text-demo
+../../pakkun stages text-demo
+../../pakkun show text-demo:upper/result
+../../pakkun publish text-demo:upper/result ./build/result.txt
+../../pakkun provenance text-demo:upper/result
 ```
 
 What each command is doing:
 
-- `pipe init` creates the local `.pipe/` storage and metadata directory in the example folder.
-- `pipe run text-demo` executes the named pipeline in dependency order.
-- `pipe stages text-demo` shows the declared steps and outputs from `pipe.yaml`.
-- `pipe show text-demo:upper/result` resolves the latest successful `result` artifact and shows where it is stored under `.pipe/objects`.
-- `pipe publish ... ./build/result.txt` materializes that stored artifact back into a normal visible file.
-- `pipe provenance ...` shows which run and step produced the artifact and which prior artifacts fed into it.
+- `pakkun init` creates the local `.pipe/` storage and metadata directory in the example folder.
+- `pakkun run text-demo` executes the named pipeline in dependency order.
+- `pakkun stages text-demo` shows the declared steps and outputs from `pipe.yaml`.
+- `pakkun show text-demo:upper/result` resolves the latest successful `result` artifact and shows where it is stored under `.pipe/objects`.
+- `pakkun publish ... ./build/result.txt` materializes that stored artifact back into a normal visible file.
+- `pakkun provenance ...` shows which run and step produced the artifact and which prior artifacts fed into it.
 
 If you do not want to build a binary first, you can run the CLI directly with Go:
 
 ```bash
 cd examples/text
-go run ../../cmd/pipe init
-go run ../../cmd/pipe run text-demo
+go run ../../cmd/pakkun init
+go run ../../cmd/pakkun run text-demo
 ```
 
 After `run`, the working tree stays mostly clean:
@@ -132,39 +155,39 @@ After `run`, the working tree stays mostly clean:
 
 ## Using the examples
 
-Each example directory is its own `pipe` project.
+Each example directory is its own `pakkun` project.
 
 The normal flow is:
 
 ```bash
 cd examples/<name>
-../../pipe init
-../../pipe status
-../../pipe stages
-../../pipe run <pipeline-name>
-../../pipe log
-../../pipe show <pipeline-name>:<step>/<output>
+../../pakkun init
+../../pakkun status
+../../pakkun stages
+../../pakkun run <pipeline-name>
+../../pakkun log
+../../pakkun show <pipeline-name>:<step>/<output>
 ```
 
 Things that matter:
 
-- Run `pipe init` inside the example directory, not at the repo root, unless you want the repo root itself to become a `pipe` project.
-- `pipe` always looks for `pipe.yaml` in the current project root.
-- `pipe stages` without an argument only works when the spec contains a single pipeline.
+- Run `pakkun init` inside the example directory, not at the repo root, unless you want the repo root itself to become a `pakkun` project.
+- `pakkun` always looks for `pipe.yaml` in the current project root.
+- `pakkun stages` without an argument only works when the spec contains a single pipeline.
 - Refs like `text-demo:upper/result` point at the latest successful run of that pipeline.
 - `alias:current` points at the most recent run, regardless of pipeline.
 
 Useful inspection commands after a run:
 
 ```bash
-../../pipe status
-../../pipe log
-../../pipe show alias:current
-../../pipe show text-demo:upper
-../../pipe show text-demo:upper/result
-../../pipe provenance text-demo:upper/result
-../../pipe mount text-demo:upper ./mounted
-../../pipe publish text-demo:upper/result ./build/result.txt
+../../pakkun status
+../../pakkun log
+../../pakkun show alias:current
+../../pakkun show text-demo:upper
+../../pakkun show text-demo:upper/result
+../../pakkun provenance text-demo:upper/result
+../../pakkun mount text-demo:upper ./mounted
+../../pakkun publish text-demo:upper/result ./build/result.txt
 ```
 
 What you should expect:

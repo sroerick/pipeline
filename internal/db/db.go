@@ -14,6 +14,8 @@ import (
 
 var ErrNotFound = errors.New("not found")
 
+const sqliteBusyTimeoutMS = 5000
+
 type DB struct {
 	path string
 }
@@ -68,7 +70,8 @@ func Init(path string) error {
 	}
 	database := &DB{path: path}
 	return database.execSQL(strings.Join([]string{
-		`PRAGMA foreign_keys = ON;`,
+		`PRAGMA journal_mode = WAL;`,
+		`PRAGMA synchronous = NORMAL;`,
 		`CREATE TABLE IF NOT EXISTS runs (
 			id TEXT PRIMARY KEY,
 			pipeline_name TEXT NOT NULL,
@@ -122,11 +125,22 @@ func Open(path string) (*DB, error) {
 	if _, err := exec.LookPath("sqlite3"); err != nil {
 		return nil, fmt.Errorf("sqlite3 not found in PATH")
 	}
-	return &DB{path: path}, nil
+	database := &DB{path: path}
+	if err := database.configure(); err != nil {
+		return nil, err
+	}
+	return database, nil
 }
 
 func (d *DB) Close() error {
 	return nil
+}
+
+func (d *DB) configure() error {
+	return d.execSQL(strings.Join([]string{
+		`PRAGMA journal_mode = WAL;`,
+		`PRAGMA synchronous = NORMAL;`,
+	}, "\n"))
 }
 
 func (d *DB) CreateRun(record RunRecord) error {
@@ -469,7 +483,7 @@ func IsNotFound(err error) bool {
 }
 
 func (d *DB) execSQL(sql string) error {
-	cmd := exec.Command("sqlite3", "-batch", d.path, sql)
+	cmd := d.sqliteCommand(sql, false)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		trimmed := strings.TrimSpace(string(output))
@@ -482,7 +496,7 @@ func (d *DB) execSQL(sql string) error {
 }
 
 func (d *DB) queryRows(sql string) ([]map[string]string, error) {
-	cmd := exec.Command("sqlite3", "-batch", "-json", d.path, sql)
+	cmd := d.sqliteCommand(sql, true)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		trimmed := strings.TrimSpace(string(output))
@@ -490,6 +504,9 @@ func (d *DB) queryRows(sql string) ([]map[string]string, error) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("%w: %s", err, trimmed)
+	}
+	if strings.TrimSpace(string(output)) == "" {
+		return nil, nil
 	}
 	var rows []map[string]any
 	if err := json.Unmarshal(output, &rows); err != nil {
@@ -519,6 +536,19 @@ func (d *DB) queryRows(sql string) ([]map[string]string, error) {
 		out = append(out, converted)
 	}
 	return out, nil
+}
+
+func (d *DB) sqliteCommand(sql string, jsonOutput bool) *exec.Cmd {
+	args := []string{
+		"-batch",
+		"-cmd", fmt.Sprintf(".timeout %d", sqliteBusyTimeoutMS),
+		"-cmd", "PRAGMA foreign_keys = ON;",
+	}
+	if jsonOutput {
+		args = append(args, "-json")
+	}
+	args = append(args, d.path, sql)
+	return exec.Command("sqlite3", args...)
 }
 
 func runFromRow(row map[string]string) (RunRecord, error) {

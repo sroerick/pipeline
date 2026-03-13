@@ -2,6 +2,7 @@
 
 # Go build artifacts
 /pipe
+/pakkun
 *.test
 *.out
 coverage.out

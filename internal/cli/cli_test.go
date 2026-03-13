@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"pipe/internal/config"
-	"pipe/internal/db"
+	"pakkun/internal/config"
+	"pakkun/internal/db"
 )
 
 func TestCLIEndToEnd(t *testing.T) {

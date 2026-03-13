@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"pipe/internal/db"
-	"pipe/internal/pipeline"
-	"pipe/internal/store"
+	"pakkun/internal/db"
+	"pakkun/internal/pipeline"
+	"pakkun/internal/store"
 )
 
 type RefResult struct {

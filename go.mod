@@ -1,4 +1,4 @@
-module pipe
+module pakkun
 
 go 1.26
 

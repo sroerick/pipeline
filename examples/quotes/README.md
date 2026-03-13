@@ -17,16 +17,16 @@ Expected tools:
 From the repository root:
 
 ```bash
-go build -o ./pipe ./cmd/pipe
+go build -o ./pakkun ./cmd/pakkun
 cd examples/quotes
-../../pipe init
-../../pipe run quotes-build
-../../pipe show quotes-build:compile/pdf
-../../pipe publish quotes-build:compile/pdf ./build/quotes.pdf
+../../pakkun init
+../../pakkun run quotes-build
+../../pakkun show quotes-build:compile/pdf
+../../pakkun publish quotes-build:compile/pdf ./build/quotes.pdf
 ```
 
 This example is useful for understanding:
 
 - script-driven pipeline stages that do more than simple shell one-liners
-- publishing a final artifact automatically during `pipe run`
+- publishing a final artifact automatically during `pakkun run`
 - keeping generated `.tex`, `.log`, and `.pdf` files inside `.pipe/` until you explicitly publish them

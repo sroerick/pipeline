@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>pakkun ui</title>
+    <link rel="stylesheet" href="/app.css">
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="eyebrow">Local Pipeline Console</p>
+          <h1>pakkun ui</h1>
+          <p id="project-root" class="muted">Loading project...</p>
+        </div>
+        <nav>
+          <a href="#/" class="nav-link">Overview</a>
+        </nav>
+        <section>
+          <div class="section-head">
+            <h2>Pipelines</h2>
+            <button id="refresh-button" class="ghost" type="button">Refresh</button>
+          </div>
+          <div id="pipeline-list" class="stack"></div>
+        </section>
+      </aside>
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Experimental</p>
+            <h2 id="view-title">Overview</h2>
+          </div>
+          <div id="page-actions" class="actions"></div>
+        </header>
+        <section id="flash" class="flash hidden"></section>
+        <section id="view" class="view"></section>
+      </main>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>

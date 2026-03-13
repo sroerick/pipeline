@@ -10,16 +10,16 @@ import (
 	"strings"
 	"time"
 
-	"pipe/internal/config"
-	"pipe/internal/db"
-	"pipe/internal/fsx"
-	"pipe/internal/graph"
-	"pipe/internal/manifest"
-	"pipe/internal/pipeline"
-	"pipe/internal/resolve"
-	"pipe/internal/runner"
-	"pipe/internal/store"
-	"pipe/internal/workspace"
+	"pakkun/internal/config"
+	"pakkun/internal/db"
+	"pakkun/internal/fsx"
+	"pakkun/internal/graph"
+	"pakkun/internal/manifest"
+	"pakkun/internal/pipeline"
+	"pakkun/internal/resolve"
+	"pakkun/internal/runner"
+	"pakkun/internal/store"
+	"pakkun/internal/workspace"
 )
 
 type Engine struct {
