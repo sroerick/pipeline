@@ -6,18 +6,19 @@ It stores declared outputs under `.pipe/objects`, records runs and provenance in
 
 The canonical user-edited pipeline definition lives in `pipe.yaml` at the project root.
 
-## Project note
+## human written note
 
-`pakkun` started as a tool for artifact-heavy personal build workflows,
-especially small LaTeX projects where I wanted a clean working tree without
-throwing away intermediate files or provenance. I am publishing it in that same
-spirit: as a compact local pipeline runner that is already useful for a narrow
-set of workflows, while still being explicit about its current limits.
+pakkun is vibeslop, leaving me very suspicious of it, but I'm using it in production in a couple different ways.
 
-Structurally, this is closer to "git for derived artifacts" than to a CI
-platform. Pipelines are declared in YAML, steps can run arbitrary commands, and
-intermediate outputs stay under `.pipe/` instead of cluttering the project
-root.
+The first use case I have for this is LaTeX greeting cards. It lets me keep a clean folder and hide all the intermediate .tex files inside a hidden folder. It effectively acts as a TeX Makefile with better ergonomics.
+
+I'm also using this for CI/CD. I have build and deploy scripts for it running on my BSD server. It seems to be working pretty nicely. I don't know if this is a huge ergonomics improvement, but I find it much more usable than, say, Github Actions. I don't know if this would work as well for cloud deployments (like Github Actions) and I'm not super interested in finding out.
+
+Finally, I used this to clean up the data pipeline for a bible app that I built. Basically, I was taking some xlsx files and piping them into a database. Over the course of production, I had done a lot of manual SQL edits in order to get the app working. I was able to use an LLM to formalize that pipeline using the pakkun system. I tested the newly created database with the existing one by comparing pg_dump, and it worked great.
+
+Structurally, this is git for ETL pipelines. You configure your pipeline stages in YAML, those can be basically any executable. You can track runs and stuff. It's really not much more than a Makefile right now, but I like it.
+
+I have a few more use cases I'd like to run this through and I think it may become slightly useful.
 
 ## Current status
 
@@ -48,7 +49,6 @@ The main limits are about scope, not whether the basic workflow exists:
 
 - `pakkun` runs locally on the machine or CI runner that invokes it
 - metadata currently depends on the external `sqlite3` binary
-- `kind: exec` is currently accepted as a shell-routed alias of `kind: shell`
 - `pakkun` does not yet provide remote execution, hosted runners, or cross-job
   workflow orchestration
 
@@ -334,9 +334,6 @@ Suggested order:
 ## Notes
 
 - `mount` defaults to symlinks and falls back to copies when needed.
-- `mount` expects the target directory to be absent or empty; it will not delete an existing populated directory.
 - `publish` defaults to copy mode; config loading also accepts legacy `expose_mode` and `projection_mode` keys for compatibility.
-- `publish` will replace an existing file target, but it refuses to replace an existing directory tree.
-- `kind: exec` is currently treated the same as `kind: shell`, so commands still run through the platform shell.
 - The CLI resolves `<pipeline>:<step>` refs against the latest successful run of that pipeline.
 - Output paths are constrained to the per-step output directory; a step cannot declare outputs outside `PIPE_STEP_OUT`.
