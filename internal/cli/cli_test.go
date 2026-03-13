@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"pakkun/internal/config"
@@ -66,6 +67,9 @@ pipelines:
 			t.Fatalf("Run(%v): %v", args, err)
 		}
 	}
+	if err := Run(ctx, []string{"run", "demo"}); err != nil {
+		t.Fatalf("Run(%v): %v", []string{"run", "demo"}, err)
+	}
 
 	autoPublishedPath := filepath.Join(projectDir, "out", "result.txt")
 	data, err := os.ReadFile(autoPublishedPath)
@@ -109,8 +113,8 @@ pipelines:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(runs) != 1 {
-		t.Fatalf("expected 1 run, got %d", len(runs))
+	if len(runs) != 2 {
+		t.Fatalf("expected 2 runs, got %d", len(runs))
 	}
 	if runs[0].Status != "success" {
 		t.Fatalf("run status = %q, want success", runs[0].Status)
@@ -210,6 +214,65 @@ pipelines:
 	}
 	if got := string(data); got != "assert ok: upper/result == build:upper/result\n" {
 		t.Fatalf("report content = %q", got)
+	}
+}
+
+func TestCLIMountRejectsNonEmptyTargetDir(t *testing.T) {
+	projectDir := t.TempDir()
+	writeFile(t, filepath.Join(projectDir, "input.txt"), "hello pipeline\n")
+	writeFile(t, filepath.Join(projectDir, "pipe.yaml"), `
+version: 1
+
+pipelines:
+  - name: demo
+    steps:
+      - name: copy
+        kind: shell
+        run: cat input.txt > "$PIPE_STEP_OUT/copied.txt"
+        inputs:
+          - source: input.txt
+        outputs:
+          - name: text
+            path: copied.txt
+            type: file
+`)
+
+	previousWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(previousWD)
+	})
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	for _, args := range [][]string{
+		{"init"},
+		{"run", "demo"},
+	} {
+		if err := Run(ctx, args); err != nil {
+			t.Fatalf("Run(%v): %v", args, err)
+		}
+	}
+
+	targetDir := filepath.Join(projectDir, "mounted")
+	writeFile(t, filepath.Join(targetDir, "sentinel.txt"), "keep me\n")
+	err = Run(ctx, []string{"mount", "demo:copy", targetDir})
+	if err == nil {
+		t.Fatal("mount unexpectedly succeeded")
+	}
+	if !strings.Contains(err.Error(), "not empty") {
+		t.Fatalf("mount error = %v, want non-empty target failure", err)
+	}
+	data, readErr := os.ReadFile(filepath.Join(targetDir, "sentinel.txt"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(data) != "keep me\n" {
+		t.Fatalf("sentinel content = %q", data)
 	}
 }
 

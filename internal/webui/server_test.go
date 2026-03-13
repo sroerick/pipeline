@@ -110,6 +110,17 @@ pipelines:
 	if got, want := string(data), "HELLO PIPELINE\n"; got != want {
 		t.Fatalf("published content = %q, want %q", got, want)
 	}
+
+	if err := os.MkdirAll(filepath.Join(projectDir, "existing"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	conflictResp := doRequest(t, handler, http.MethodPost, "/api/publish", map[string]string{
+		"ref":  "demo:upper/result",
+		"path": "existing",
+	})
+	if conflictResp.StatusCode != http.StatusConflict {
+		t.Fatalf("conflict status = %d, want %d: %s", conflictResp.StatusCode, http.StatusConflict, readBody(t, conflictResp))
+	}
 }
 
 func doJSON(t *testing.T, handler http.Handler, method, path string, body map[string]string) map[string]any {

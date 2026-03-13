@@ -14,7 +14,6 @@ import (
 	"pakkun/internal/config"
 	"pakkun/internal/db"
 	"pakkun/internal/engine"
-	"pakkun/internal/fsx"
 	"pakkun/internal/manifest"
 	"pakkun/internal/pipeline"
 	"pakkun/internal/resolve"
@@ -273,10 +272,7 @@ func cmdMount(rawRef, dir string) error {
 	if resolved.Run != nil && resolved.Step == nil {
 		return fmt.Errorf("mount expects a stage or artifact ref, not a run ref")
 	}
-	if err := fsx.RemoveIfExists(targetDir); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+	if err := workspace.EnsureEmptyDir(targetDir); err != nil {
 		return err
 	}
 	mode := workspace.Mode(project.Config.MountMode)

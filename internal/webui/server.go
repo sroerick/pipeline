@@ -713,6 +713,10 @@ func (a *App) handlePublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := workspace.Materialize(resolved.StoredPath, target, workspace.Mode(a.project.Config.PublishMode)); err != nil {
+		if errors.Is(err, workspace.ErrTargetExists) || errors.Is(err, workspace.ErrTargetNotEmpty) {
+			writeAPIError(w, http.StatusConflict, err)
+			return
+		}
 		writeAPIError(w, http.StatusInternalServerError, err)
 		return
 	}

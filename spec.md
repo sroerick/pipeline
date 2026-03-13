@@ -77,7 +77,7 @@ The tool should optimize for:
 - inspectable intermediate state
 - stable command vocabulary
 - project-local storage
-- simple install and distribution as a single binary
+- simple install and distribution as a small CLI tool
 
 Users should think in terms of:
 - pipelines
@@ -157,6 +157,7 @@ Do not auto-open editors or viewers in v1.
 Creates a projection directory containing the artifacts associated with the ref.
 
 Use symlink by default on platforms that support it. Support fallback to copy mode via config.
+The target directory should be absent or empty; v1 should refuse to delete an existing populated directory automatically.
 
 ### `pipe publish <ref> <path>`
 Materializes a single artifact at a stable user-visible path.
@@ -167,6 +168,7 @@ pipe publish thesis:latex2/pdf ./build/thesis.pdf
 ```
 
 `publish` requires an artifact ref, not a run ref or a bare stage ref.
+It may replace an existing file target, but it should refuse to replace an existing directory tree automatically.
 
 ### `pipe log [pipeline-or-run]`
 Shows recent runs and basic execution details.
@@ -312,7 +314,7 @@ Support these values in v1:
 - `exec`
 - `assert`
 
-You may internally treat both similarly, but keep the field for future evolution.
+In the current implementation, `exec` is a compatibility alias for `shell` and still runs through the platform shell. Keep the field for future evolution so a direct-exec mode can be added later without changing the spec surface.
 
 `assert` is a built-in comparison step for file artifacts. In v1 it compares exactly two file inputs, writes a report artifact, and fails the run if the normalized contents differ.
 

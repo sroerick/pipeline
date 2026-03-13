@@ -6,13 +6,18 @@ It stores declared outputs under `.pipe/objects`, records runs and provenance in
 
 The canonical user-edited pipeline definition lives in `pipe.yaml` at the project root.
 
-## human written note
+## Project note
 
-pakkun is vibeslop. I'm just publishing it so that I have access to it to install from Github. Right now, the only thing I've actually used it for is making cute LaTeX greeting cards. It lets me keep a clean folder and hide all the intermediate .tex files inside a hidden folder.  
+`pakkun` started as a tool for artifact-heavy personal build workflows,
+especially small LaTeX projects where I wanted a clean working tree without
+throwing away intermediate files or provenance. I am publishing it in that same
+spirit: as a compact local pipeline runner that is already useful for a narrow
+set of workflows, while still being explicit about its current limits.
 
-Structurally, this is git for ETL pipelines. You configure your pipeline stages in YAML, those can be basically any executable. You can track runs and stuff. It's really not much more than a Makefile right now, but I like it.
-
-I have a few more use cases I'd like to run this through and I think it may become slightly useful.
+Structurally, this is closer to "git for derived artifacts" than to a CI
+platform. Pipelines are declared in YAML, steps can run arbitrary commands, and
+intermediate outputs stay under `.pipe/` instead of cluttering the project
+root.
 
 ## Current status
 
@@ -43,6 +48,7 @@ The main limits are about scope, not whether the basic workflow exists:
 
 - `pakkun` runs locally on the machine or CI runner that invokes it
 - metadata currently depends on the external `sqlite3` binary
+- `kind: exec` is currently accepted as a shell-routed alias of `kind: shell`
 - `pakkun` does not yet provide remote execution, hosted runners, or cross-job
   workflow orchestration
 
@@ -297,6 +303,7 @@ The `publish` target must stay within the project root. During `run`, any publis
 
 - [`examples/text`](./examples/text): small, fully runnable text-processing pipeline.
 - [`examples/compiler`](./examples/compiler): compiler-shaped pipeline with parse/typecheck/codegen stages using standard shell tools.
+- [`examples/dataset`](./examples/dataset): production-shaped data bundle pipeline with multiple extraction steps, published outputs, a reusable reference artifact, and a parity check built with `extends`, `ref`, and `assert`.
 - [`examples/quotes`](./examples/quotes): script-driven quote-card PDF pipeline using `python3`, `patch`, and `pdflatex`.
 - [`examples/latex`](./examples/latex): LaTeX-style multi-stage template matching the original spec. This one expects TeX tools such as `pdflatex` and `bibtex`.
 
@@ -304,8 +311,9 @@ Suggested order:
 
 1. Start with `examples/text`.
 2. Move to `examples/compiler` once the ref model makes sense.
-3. Try `examples/quotes` if you want a more real script-driven pipeline with a single final PDF artifact.
-4. Use `examples/latex` only if you have the TeX toolchain installed.
+3. Try `examples/dataset` to see a more production-shaped pipeline with published outputs and parity verification.
+4. Try `examples/quotes` if you want a more real script-driven pipeline with a single final PDF artifact.
+5. Use `examples/latex` only if you have the TeX toolchain installed.
 
 ## Storage layout
 
@@ -326,6 +334,9 @@ Suggested order:
 ## Notes
 
 - `mount` defaults to symlinks and falls back to copies when needed.
+- `mount` expects the target directory to be absent or empty; it will not delete an existing populated directory.
 - `publish` defaults to copy mode; config loading also accepts legacy `expose_mode` and `projection_mode` keys for compatibility.
+- `publish` will replace an existing file target, but it refuses to replace an existing directory tree.
+- `kind: exec` is currently treated the same as `kind: shell`, so commands still run through the platform shell.
 - The CLI resolves `<pipeline>:<step>` refs against the latest successful run of that pipeline.
 - Output paths are constrained to the per-step output directory; a step cannot declare outputs outside `PIPE_STEP_OUT`.
