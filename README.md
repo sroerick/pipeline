@@ -81,6 +81,8 @@ The current implementation uses the local `sqlite3` binary for metadata access, 
 
 OpenBSD build and install notes for a server build box live in
 [`docs/openbsd-build.md`](./docs/openbsd-build.md).
+For a generic bare-repo hook pattern, see
+[`docs/post-receive-deploy.md`](./docs/post-receive-deploy.md).
 
 ## CI usage
 
